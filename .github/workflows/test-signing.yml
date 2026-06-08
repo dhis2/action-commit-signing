@@ -1,4 +1,4 @@
-name: Self-test commit signing
+name: Test commit signing
 
 on:
   pull_request:
