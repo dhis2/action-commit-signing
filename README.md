@@ -77,7 +77,7 @@ the job has already checked out the repository.
 - uses: dhis2/action-commit-signing@v1
   with:
     ssh-signing-key: ${{ secrets.DHIS2_BOT_SSH_SIGNING_KEY }}
-    ssh-signing-key-passphrase: ${{ secrets.DHIS2_BOT_SSH_SIGNING_KEY_PASSPHRASE }}
+    ssh-signing-key-passphrase: ${{ secrets.DHIS2_BOT_SSH_SIGNING_PASSPHRASE }}
 ```
 
 ## Inputs
