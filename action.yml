@@ -1,0 +1,89 @@
+name: 'dhis2: setup commit signing (SSH)'
+description: 'Configure git to SSH-sign commits so automated commits satisfy "require signed commits" rules.'
+author: 'DHIS2'
+
+inputs:
+  ssh-signing-key:
+    description: 'Private SSH signing key (e.g. from secrets.DHIS2_BOT_SSH_SIGNING_KEY).'
+    required: true
+  ssh-signing-key-passphrase:
+    description: 'Passphrase for the private key. Leave empty for a passphraseless key.'
+    required: false
+    default: ''
+  git-user-name:
+    description: 'Name used for the commit author/committer.'
+    required: false
+    default: 'dhis2-bot'
+  git-user-email:
+    description: 'Email used for the commit author/committer. Must match the account that holds the signing key for commits to show as Verified.'
+    required: false
+    default: 'apps@dhis2.org'
+  global:
+    description: 'Apply the git configuration globally (true) or to the current repository only (false).'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Configure SSH commit signing
+      shell: bash
+      env:
+        SSH_SIGNING_KEY: ${{ inputs.ssh-signing-key }}
+        SSH_SIGNING_KEY_PASSPHRASE: ${{ inputs.ssh-signing-key-passphrase }}
+        GIT_USER_NAME: ${{ inputs.git-user-name }}
+        GIT_USER_EMAIL: ${{ inputs.git-user-email }}
+        GIT_GLOBAL: ${{ inputs.global }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "${SSH_SIGNING_KEY}" ]; then
+          echo "::error::ssh-signing-key input is empty. Pass the private signing key (e.g. secrets.DHIS2_BOT_SSH_SIGNING_KEY)."
+          exit 1
+        fi
+
+        KEY_FILE="${RUNNER_TEMP}/dhis2_signing_key"
+        PUB_FILE="${KEY_FILE}.pub"
+        ALLOWED_SIGNERS="${RUNNER_TEMP}/dhis2_allowed_signers"
+
+        # Write the private key, normalising the trailing newline, and lock down perms.
+        printf '%s\n' "${SSH_SIGNING_KEY}" > "${KEY_FILE}"
+        chmod 600 "${KEY_FILE}"
+
+        if [ -n "${SSH_SIGNING_KEY_PASSPHRASE}" ]; then
+          # Passphrase-protected key: derive the public key with the passphrase and
+          # load the private key into an agent so signing never prompts.
+          ssh-keygen -y -P "${SSH_SIGNING_KEY_PASSPHRASE}" -f "${KEY_FILE}" > "${PUB_FILE}"
+
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=${SSH_AUTH_SOCK}" >> "${GITHUB_ENV}"
+          echo "SSH_AGENT_PID=${SSH_AGENT_PID}" >> "${GITHUB_ENV}"
+
+          ASKPASS="${RUNNER_TEMP}/dhis2_askpass.sh"
+          printf '#!/bin/sh\necho "%s"\n' "${SSH_SIGNING_KEY_PASSPHRASE}" > "${ASKPASS}"
+          chmod 700 "${ASKPASS}"
+          SSH_ASKPASS="${ASKPASS}" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 ssh-add "${KEY_FILE}" < /dev/null
+          rm -f "${ASKPASS}"
+        else
+          # Passphraseless key: the private key sits next to the .pub, so ssh-keygen
+          # finds it automatically when signing.
+          ssh-keygen -y -f "${KEY_FILE}" > "${PUB_FILE}"
+        fi
+        chmod 644 "${PUB_FILE}"
+
+        # allowed_signers lets `git log --show-signature` verify signatures within the run.
+        printf '%s %s\n' "${GIT_USER_EMAIL}" "$(cat "${PUB_FILE}")" > "${ALLOWED_SIGNERS}"
+
+        SCOPE=()
+        if [ "${GIT_GLOBAL}" = "true" ]; then
+          SCOPE=(--global)
+        fi
+
+        git config "${SCOPE[@]}" gpg.format ssh
+        git config "${SCOPE[@]}" user.signingkey "${PUB_FILE}"
+        git config "${SCOPE[@]}" commit.gpgsign true
+        git config "${SCOPE[@]}" user.name "${GIT_USER_NAME}"
+        git config "${SCOPE[@]}" user.email "${GIT_USER_EMAIL}"
+        git config "${SCOPE[@]}" gpg.ssh.allowedSignersFile "${ALLOWED_SIGNERS}"
+
+        echo "Configured SSH commit signing as ${GIT_USER_NAME} <${GIT_USER_EMAIL}>."
