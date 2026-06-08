@@ -1,0 +1,64 @@
+name: Self-test commit signing
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify-signing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup commit signing
+        uses: ./
+        with:
+          ssh-signing-key: ${{ secrets.DHIS2_BOT_SSH_SIGNING_KEY }}
+          ssh-signing-key-passphrase: ${{ secrets.DHIS2_BOT_SSH_SIGNING_PASSPHRASE }}
+
+      - name: Create a signed test commit on a throwaway branch
+        id: commit
+        run: |
+          set -euo pipefail
+          BRANCH="ci/signing-test-${{ github.run_id }}-${{ github.run_attempt }}"
+          git checkout -b "$BRANCH"
+          git commit --allow-empty -m "test: verify SSH commit signing"
+
+          echo "--- local verification ---"
+          git log --show-signature -1
+          git verify-commit HEAD
+
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          git push origin "$BRANCH"
+
+      - name: Assert GitHub marks the commit Verified
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          verified="" reason=""
+          for i in 1 2 3 4 5 6; do
+            verified="$(gh api "repos/${{ github.repository }}/commits/$SHA" --jq '.commit.verification.verified')"
+            reason="$(gh api "repos/${{ github.repository }}/commits/$SHA" --jq '.commit.verification.reason')"
+            echo "attempt $i: verified=$verified reason=$reason"
+            [ "$verified" = "true" ] && break
+            sleep 3
+          done
+          if [ "$verified" != "true" ]; then
+            echo "::error::Commit $SHA is NOT Verified (reason=$reason). Likely the signing key is not registered on the dhis2-bot account, or the committer email is not a verified email on that account."
+            exit 1
+          fi
+          echo "::notice::Commit $SHA is Verified (reason=$reason)."
+
+      - name: Delete throwaway branch
+        if: always() && steps.commit.outputs.branch != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: git push origin --delete "${{ steps.commit.outputs.branch }}" || true
