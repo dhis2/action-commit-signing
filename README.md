@@ -22,14 +22,6 @@ inherits this configuration and is signed automatically:
    commit author name/email and an `allowed_signers` file for local
    verification.
 
-Because the action configures the git CLI rather than wrapping a specific tool,
-it works with manual `git commit`, `semantic-release`, and anything else that
-shells out to git.
-
-> Note: a reusable workflow (`workflow_call`) cannot do this, because it runs as
-> a separate job on its own runner; the git config would not reach your release
-> job. That is why this is a composite action invoked with `uses:`.
-
 ## Prerequisites
 
 For commits to show as **Verified** (and to pass a signed-commits rule), the
@@ -38,8 +30,9 @@ named in `git-user-email` as a **Signing Key** (type `signing`, not
 `authentication`), under *Settings -> SSH and GPG keys*. The commit email must
 match an email on that account.
 
-For DHIS2 this is the [`dhis2-bot`](https://github.com/dhis2-bot) account, with
-the private key stored as the organization secret `DHIS2_BOT_SSH_SIGNING_KEY`.
+For DHIS2 this is the [`dhis2-bot`](https://github.com/dhis2-bot) account. The
+private key is stored as the organization secret `DHIS2_BOT_SSH_SIGNING_KEY` and
+its passphrase as `DHIS2_BOT_SSH_SIGNING_PASSPHRASE`.
 
 ## Usage
 
@@ -54,6 +47,7 @@ the job has already checked out the repository.
 - uses: dhis2/action-commit-signing@v1
   with:
     ssh-signing-key: ${{ secrets.DHIS2_BOT_SSH_SIGNING_KEY }}
+    ssh-signing-key-passphrase: ${{ secrets.DHIS2_BOT_SSH_SIGNING_PASSPHRASE }}
 
 # ... later steps that commit (e.g. semantic-release) are now signed
 ```
@@ -64,6 +58,7 @@ the job has already checked out the repository.
 - uses: dhis2/action-commit-signing@v1
   with:
     ssh-signing-key: ${{ secrets.DHIS2_BOT_SSH_SIGNING_KEY }}
+    ssh-signing-key-passphrase: ${{ secrets.DHIS2_BOT_SSH_SIGNING_PASSPHRASE }}
 
 - uses: dhis2/action-semantic-release@master
   with:
@@ -71,14 +66,10 @@ the job has already checked out the repository.
     github-token: ${{ secrets.DHIS2_BOT_GITHUB_TOKEN }}
 ```
 
-### Passphrase-protected key
+### Passphraseless keys
 
-```yaml
-- uses: dhis2/action-commit-signing@v1
-  with:
-    ssh-signing-key: ${{ secrets.DHIS2_BOT_SSH_SIGNING_KEY }}
-    ssh-signing-key-passphrase: ${{ secrets.DHIS2_BOT_SSH_SIGNING_PASSPHRASE }}
-```
+If the signing key has no passphrase, omit the `ssh-signing-key-passphrase`
+input.
 
 ## Inputs
 

@@ -1,5 +1,5 @@
 name: 'dhis2: setup commit signing (SSH)'
-description: 'Configure git to SSH-sign commits and tags so automated commits satisfy "require signed commits" rules.'
+description: 'Configure git to SSH-sign commits so automated commits satisfy "require signed commits" rules.'
 author: 'DHIS2'
 
 inputs:
